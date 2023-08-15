@@ -1,7 +1,7 @@
 #
 #
 #
-
+from collections import defaultdict
 from ipaddress import IPv4Address, IPv6Address
 from logging import getLogger
 
@@ -17,30 +17,37 @@ class Ec2Source(_AuthMixin, BaseSource):
     SUPPORTS = ('A', 'AAAA', 'PTR')
 
     def __init__(
-        self,
-        id,
-        region,
-        access_key_id=None,
-        secret_access_key=None,
-        session_token=None,
-        role_arn=None,
-        client_max_attempts=None,
-        ttl=3600,
-        tag_prefix='octodns',
-        *args,
-        **kwargs,
+            self,
+            id,
+            region,
+            access_key_id=None,
+            secret_access_key=None,
+            session_token=None,
+            role_arn=None,
+            client_max_attempts=None,
+            ttl=3600,
+            tag_prefix='octodns',
+            use_public_ip=False,
+            populate_should_replace=False,
+            *args,
+            **kwargs,
     ):
         self.log = getLogger(f'Ec2Source[{id}]')
         self.log.info(
-            '__init__: id=%s, region=%s, access_key_id=%s, ttl=%d, tag_prefix=%s',
+            '__init__: id=%s, region=%s, access_key_id=%s, ttl=%d, tag_prefix=%s, use_public_ip=%d, '
+            'populate_should_replace=%d',
             id,
             region,
             access_key_id,
             ttl,
             tag_prefix,
+            use_public_ip,
+            populate_should_replace,
         )
         self.ttl = ttl
         self.tag_prefix = tag_prefix
+        self.use_public_ip = use_public_ip
+        self.populate_should_replace = populate_should_replace
 
         super().__init__(id, *args, **kwargs)
 
@@ -76,6 +83,7 @@ class Ec2Source(_AuthMixin, BaseSource):
                     fqdns = [f'{i}.' if i[-1] != '.' else i for i in fqdns]
                     instances[instance['InstanceId']] = {
                         'private_v4': instance.get('PrivateIpAddress'),
+                        'public_v4': instance.get('PublicIpAddress'),
                         'v6': instance.get('Ipv6Address'),
                         'fqdns': fqdns,
                     }
@@ -85,6 +93,20 @@ class Ec2Source(_AuthMixin, BaseSource):
             self._instances = instances
 
         return self._instances
+
+    # def _populate_a_record(self, ip, name, records):
+    #
+    #
+    #     a = Record.new(
+    #         zone,
+    #         name,
+    #         {
+    #             'type': 'A',
+    #             'ttl': self.ttl,
+    #             'value': ip,
+    #         },
+    #     )
+    #     zone.add_record(a)
 
     def _populate(self, zone):
         for instance in self.instances:
@@ -104,6 +126,7 @@ class Ec2Source(_AuthMixin, BaseSource):
                             'value': instance['private_v4'],
                         },
                     )
+                    print(zone.records)
                     zone.add_record(a)
 
                 if instance['v6']:
@@ -117,7 +140,34 @@ class Ec2Source(_AuthMixin, BaseSource):
                         },
                     )
                     zone.add_record(aaaa)
-
+    # def _populate(self, zone):
+    #     a_records = defaultdict(set)
+    #     aaaa_records = defaultdict(set)
+    #     for instance in self.instances:
+    #         for fqdn in instance['fqdns']:
+    #             if not fqdn.endswith(zone.name):
+    #                 # not interested in this one
+    #                 continue
+    #
+    #             name = zone.hostname_from_fqdn(fqdn)
+    #             if instance['public_v4']:
+    #                 if self.use_public_ip:
+    #                     self._populate_a_record(instance['public_v4'], name, a_records)
+    #             if instance['private_v4']:
+    #                 if not self.use_public_ip:
+    #                     self._populate_a_record(instance['private_v4'], name, a_records)
+    #
+    #             if instance['v6']:
+    #                 aaaa = Record.new(
+    #                     zone,
+    #                     name,
+    #                     {
+    #                         'type': 'AAAA',
+    #                         'ttl': self.ttl,
+    #                         'value': instance['v6'],
+    #                     },
+    #                 )
+    #                 zone.add_record(aaaa)
     def _populate_in_addr_arpa(self, zone):
         for instance in self.instances:
             if not instance['fqdns']:
@@ -189,18 +239,18 @@ class ElbSource(_AuthMixin, BaseSource):
     SUPPORTS = ('ALIAS', 'CNAME')
 
     def __init__(
-        self,
-        id,
-        region,
-        access_key_id=None,
-        secret_access_key=None,
-        session_token=None,
-        role_arn=None,
-        client_max_attempts=None,
-        ttl=3600,
-        tag_prefix='octodns',
-        *args,
-        **kwargs,
+            self,
+            id,
+            region,
+            access_key_id=None,
+            secret_access_key=None,
+            session_token=None,
+            role_arn=None,
+            client_max_attempts=None,
+            ttl=3600,
+            tag_prefix='octodns',
+            *args,
+            **kwargs,
     ):
         self.log = getLogger(f'ElbSource[{id}]')
         self.log.info(
