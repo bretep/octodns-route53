@@ -131,7 +131,18 @@ class Ec2Source(_AuthMixin, BaseSource):
                         print(a)
                         for record in zone.records:
                             if a == record:
-                                print(record.values)
+                                ips = record.values
+                                if instance['private_v4'] not in record.values:
+                                    ips.append(instance['private_v4'])
+                                    a = Record.new(
+                                        zone,
+                                        name,
+                                        {
+                                            'type': 'A',
+                                            'ttl': self.ttl,
+                                            'value': ips,
+                                        },
+                                    )
                         print("THIS ZONE EXISTS")
                     zone.add_record(a, replace=True)
 
