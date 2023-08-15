@@ -129,10 +129,9 @@ class Ec2Source(_AuthMixin, BaseSource):
                     if a in zone.records:
                         print("THIS ZONE EXISTS")
                         print(a)
-                        existing = zone.records.get(name)
-                        print()
-                        print(existing)
-                        print(existing.values)
+                        for record in zone.records:
+                            if a == record:
+                                print(record)
                         print("THIS ZONE EXISTS")
                     zone.add_record(a, replace=True)
 
