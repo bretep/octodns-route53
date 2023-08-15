@@ -28,26 +28,26 @@ class Ec2Source(_AuthMixin, BaseSource):
             ttl=3600,
             tag_prefix='octodns',
             use_public_ip=False,
-            populate_should_replace=False,
+            combine_records=False,
             *args,
             **kwargs,
     ):
         self.log = getLogger(f'Ec2Source[{id}]')
         self.log.info(
             '__init__: id=%s, region=%s, access_key_id=%s, ttl=%d, tag_prefix=%s, use_public_ip=%d, '
-            'populate_should_replace=%d',
+            'combine_records=%d',
             id,
             region,
             access_key_id,
             ttl,
             tag_prefix,
             use_public_ip,
-            populate_should_replace,
+            combine_records,
         )
         self.ttl = ttl
         self.tag_prefix = tag_prefix
         self.use_public_ip = use_public_ip
-        self.populate_should_replace = populate_should_replace
+        self.combine_records = combine_records
 
         super().__init__(id, *args, **kwargs)
 
@@ -94,19 +94,27 @@ class Ec2Source(_AuthMixin, BaseSource):
 
         return self._instances
 
-    # def _populate_a_record(self, ip, name, records):
-    #
-    #
-    #     a = Record.new(
-    #         zone,
-    #         name,
-    #         {
-    #             'type': 'A',
-    #             'ttl': self.ttl,
-    #             'value': ip,
-    #         },
-    #     )
-    #     zone.add_record(a)
+    def _populate_a_record(self, ip, name, zone):
+        a = Record.new(
+            zone,
+            name,
+            {
+                'type': 'A',
+                'ttl': self.ttl,
+                'value': ip,
+            },
+        )
+        if self.combine_records:
+            if a in zone.records:
+                for record in zone.records:
+                    if a == record:
+                        record = record.copy()
+                        if ip not in record.values:
+                            record.values.append(ip)
+                            zone.add_record(record, replace=True)
+                            return
+
+        zone.add_record(a)
 
     def _populate(self, zone):
         for instance in self.instances:
@@ -116,28 +124,14 @@ class Ec2Source(_AuthMixin, BaseSource):
                     continue
 
                 name = zone.hostname_from_fqdn(fqdn)
+
+                if instance['public_v4']:
+                    if self.use_public_ip:
+                        self._populate_a_record(instance['public_v4'], name, zone)
+
                 if instance['private_v4']:
-                    a = Record.new(
-                        zone,
-                        name,
-                        {
-                            'type': 'A',
-                            'ttl': self.ttl,
-                            'value': instance['private_v4'],
-                        },
-                    )
-                    if a in zone.records:
-                        print("THIS ZONE EXISTS")
-                        print(a)
-                        for record in zone.records:
-                            if a == record:
-                                record = record.copy()
-                                if instance['private_v4'] not in record.values:
-                                    record.values.append(instance['private_v4'])
-                                    zone.add_record(record, replace=True)
-                        print("THIS ZONE EXISTS")
-                    else:
-                        zone.add_record(a, replace=True)
+                    if not self.use_public_ip:
+                        self._populate_a_record(instance['private_v4'], name, zone)
 
                 if instance['v6']:
                     aaaa = Record.new(
@@ -150,34 +144,6 @@ class Ec2Source(_AuthMixin, BaseSource):
                         },
                     )
                     zone.add_record(aaaa)
-    # def _populate(self, zone):
-    #     a_records = defaultdict(set)
-    #     aaaa_records = defaultdict(set)
-    #     for instance in self.instances:
-    #         for fqdn in instance['fqdns']:
-    #             if not fqdn.endswith(zone.name):
-    #                 # not interested in this one
-    #                 continue
-    #
-    #             name = zone.hostname_from_fqdn(fqdn)
-    #             if instance['public_v4']:
-    #                 if self.use_public_ip:
-    #                     self._populate_a_record(instance['public_v4'], name, a_records)
-    #             if instance['private_v4']:
-    #                 if not self.use_public_ip:
-    #                     self._populate_a_record(instance['private_v4'], name, a_records)
-    #
-    #             if instance['v6']:
-    #                 aaaa = Record.new(
-    #                     zone,
-    #                     name,
-    #                     {
-    #                         'type': 'AAAA',
-    #                         'ttl': self.ttl,
-    #                         'value': instance['v6'],
-    #                     },
-    #                 )
-    #                 zone.add_record(aaaa)
     def _populate_in_addr_arpa(self, zone):
         for instance in self.instances:
             if not instance['fqdns']:
