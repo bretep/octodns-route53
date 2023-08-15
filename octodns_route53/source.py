@@ -126,7 +126,10 @@ class Ec2Source(_AuthMixin, BaseSource):
                             'value': instance['private_v4'],
                         },
                     )
-                    print(zone.records)
+                    if a in zone.records:
+                        print("THIS ZONE EXISTS")
+                        print(a)
+                        print("THIS ZONE EXISTS")
                     zone.add_record(a)
 
                 if instance['v6']:
